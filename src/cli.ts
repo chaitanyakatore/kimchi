@@ -269,6 +269,8 @@ try {
 			loopGuardExtension,
 			lspExtension,
 			mcpAdapterExtension,
+			// Ferment must see raw input before prompt enrichment rewrites print-mode text.
+			fermentExtension,
 			promptEnrichmentExtension(skillPaths),
 			permissionsExtension,
 			behavioursExtension,
@@ -279,7 +281,6 @@ try {
 			uiExtension,
 			agentsExtension,
 			tagsExtension,
-			fermentExtension,
 			telemetryExtension(telemetryConfig),
 			toolRendererExtension,
 			webFetchExtension,

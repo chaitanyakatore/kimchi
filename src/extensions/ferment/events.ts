@@ -1,6 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
+import { shortenTitle } from "../../ferment/shorten-title.js"
 import { clearFermentCache } from "../../ferment/store.js"
 import { extractContextualOptions, extractTrailingQuestion } from "./contextual-options.js"
+import { appendRefEntry } from "./nudge.js"
+import { buildOneshotNudge } from "./oneshot.js"
 import { buildPlannerSupplement } from "./planner-supplement.js"
 import { resumeFerment } from "./resume.js"
 import { type FermentRuntime, defaultFermentRuntime } from "./runtime.js"
@@ -26,6 +29,11 @@ function extractPromptTextAfterLastToolCall(content: AssistantContentPart[]): st
 
 export function registerFermentEvents(pi: ExtensionAPI, runtime: FermentRuntime = defaultFermentRuntime): void {
 	const applyAndPersist = createApplyAndPersist(runtime)
+	let pendingOneshot = false
+	pi.registerFlag("ferment-oneshot", {
+		type: "boolean",
+		description: "Bootstrap the initial prompt as a one-shot exec-mode ferment.",
+	})
 
 	pi.on("session_start", async (_event, ctx) => {
 		if (process.env.KIMCHI_SUBAGENT === "1") return
@@ -36,7 +44,12 @@ export function registerFermentEvents(pi: ExtensionAPI, runtime: FermentRuntime 
 
 		const envId = process.env.KIMCHI_ACTIVE_FERMENT
 		if (envId) {
+			pendingOneshot = false
 			resumeFerment(pi, envId, ctx, runtime)
+			Reflect.deleteProperty(process.env, "KIMCHI_ACTIVE_FERMENT")
+		} else if (pi.getFlag("ferment-oneshot") === true) {
+			pendingOneshot = true
+			runtime.setActive(undefined)
 		} else {
 			runtime.setActive(undefined)
 		}
@@ -54,6 +67,36 @@ export function registerFermentEvents(pi: ExtensionAPI, runtime: FermentRuntime 
 	pi.on("input", async (event) => {
 		if (event.source === "interactive") {
 			runtime.markHumanInput()
+		}
+
+		if (!pendingOneshot) return
+		pendingOneshot = false
+
+		const intent = event.text.trim()
+		if (!intent) return
+
+		try {
+			const storage = runtime.getStorage()
+			let shortName: string
+			try {
+				shortName = await shortenTitle(intent)
+			} catch {
+				shortName = intent.length > 60 ? `${intent.slice(0, 57).trimEnd()}...` : intent
+			}
+			const f = storage.create(shortName, intent)
+			const modeOut = applyAndPersist(f.id, { type: "set_mode", mode: "exec" })
+			const updated = modeOut.ok ? modeOut.ferment : f
+			runtime.setActive(updated)
+			appendRefEntry(pi, updated.id)
+			pi.appendEntry("ferment_ack", {
+				text: `🍺  One-shot ferment: "${updated.name}"\nBranch: ${updated.worktree.branch ?? "n/a"}\nMode: exec (fully autonomous)`,
+			})
+			return { action: "transform" as const, text: buildOneshotNudge(updated, intent), images: event.images }
+		} catch (err) {
+			pi.appendEntry("ferment_oneshot_failed", {
+				text: `One-shot ferment bootstrap failed: ${err instanceof Error ? err.message : String(err)}`,
+			})
+			return
 		}
 	})
 
