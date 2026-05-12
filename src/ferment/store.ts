@@ -15,6 +15,7 @@ import { homedir } from "node:os"
 import { dirname, resolve } from "node:path"
 import { v7 as uuidv7 } from "uuid"
 
+import { activateSinglePhase, settleAfterPhaseTerminal } from "./lifecycle.js"
 import type {
 	Decision,
 	Ferment,
@@ -526,13 +527,10 @@ export class FermentStorage {
 		const f = this.get(id)
 		if (!f) return undefined
 		const now = new Date().toISOString()
-		const updated: Ferment = {
-			...f,
-			phases: f.phases.map((p) =>
-				p.id === phaseId ? { ...p, status: "failed" as const, summary: reason, completedAt: now } : p,
-			),
-			updatedAt: now,
-		}
+		const phases = f.phases.map((p) =>
+			p.id === phaseId ? { ...p, status: "failed" as const, summary: reason, completedAt: now } : p,
+		)
+		const updated = settleAfterPhaseTerminal(f, phases, now)
 		this.write(updated)
 		return updated
 	}
@@ -579,11 +577,7 @@ export class FermentStorage {
 		const now = new Date().toISOString()
 		const updated: Ferment = {
 			...f,
-			phases: f.phases.map((p) => {
-				if (p.id === phaseId) return { ...p, status: "active" as const, startedAt: now }
-				if (p.status === "active") return { ...p, status: "planned" as const }
-				return p
-			}),
+			phases: activateSinglePhase(f.phases, phaseId, now),
 			activePhaseId: phaseId,
 			lastActiveAt: now,
 			updatedAt: now,
@@ -627,13 +621,10 @@ export class FermentStorage {
 		const f = this.get(id)
 		if (!f) return undefined
 		const now = new Date().toISOString()
-		const updated: Ferment = {
-			...f,
-			phases: f.phases.map((p) =>
-				p.id === phaseId ? { ...p, status: "completed" as const, summary, completedAt: now } : p,
-			),
-			updatedAt: now,
-		}
+		const phases = f.phases.map((p) =>
+			p.id === phaseId ? { ...p, status: "completed" as const, summary, completedAt: now } : p,
+		)
+		const updated = settleAfterPhaseTerminal(f, phases, now)
 		this.write(updated)
 		return updated
 	}
@@ -643,13 +634,10 @@ export class FermentStorage {
 		const f = this.get(id)
 		if (!f) return undefined
 		const now = new Date().toISOString()
-		const updated: Ferment = {
-			...f,
-			phases: f.phases.map((p) =>
-				p.id === phaseId ? { ...p, status: "skipped" as const, summary: reason ?? "Skipped", completedAt: now } : p,
-			),
-			updatedAt: now,
-		}
+		const phases = f.phases.map((p) =>
+			p.id === phaseId ? { ...p, status: "skipped" as const, summary: reason ?? "Skipped", completedAt: now } : p,
+		)
+		const updated = settleAfterPhaseTerminal(f, phases, now)
 		this.write(updated)
 		return updated
 	}

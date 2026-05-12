@@ -221,8 +221,8 @@ export function registerPhaseTools(pi: ExtensionAPI, runtime: FermentRuntime = d
 				const name = params.phase_id.toLowerCase()
 				target = f.phases.find((p) => p.name.toLowerCase().includes(name))
 			}
-			if (!target) target = findFirstPlannedPhase(f)
-			if (!target) return toolErr("No planned phases to activate.")
+			if (!target) target = f.phases.find((p) => p.status === "failed") ?? findFirstPlannedPhase(f)
+			if (!target) return toolErr("No planned or failed phases to activate.")
 
 			// FSM validation: ensure phase activation is allowed
 			const fsmError = validateFsmTransition(f, "ACTIVATE_PHASE", { phaseId: target.id })
@@ -398,7 +398,7 @@ export function registerPhaseTools(pi: ExtensionAPI, runtime: FermentRuntime = d
 			})
 			if (!outcome.ok) return failedToolResult(outcome.error)
 			return toolOk(
-				`Phase marked as failed: ${params.reason}. Options: skip_phase to skip it, activate_phase to retry, or /ferment abandon.`,
+				`Phase marked as failed: ${params.reason}. Use activate_phase to retry, skip_phase to bypass, or ask the user to run /ferment abandon if the ferment should stop.`,
 			)
 		},
 	})
