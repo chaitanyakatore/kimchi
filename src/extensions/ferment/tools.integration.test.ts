@@ -28,6 +28,24 @@ import {
 	markScopingInteractive,
 	setActive,
 } from "./state.js"
+
+// Mock the judge module so the integration tests don't depend on a live LLM
+// endpoint. After the gate-registry migration, judgeStepVerification is the
+// only LLM-as-judge call left — invoked tactically when a step's verify
+// command exits non-zero. Stub it to "fail" so tests that don't exercise that
+// path get deterministic behaviour.
+vi.mock("./judge.js", async () => {
+	const actual = await vi.importActual<typeof import("./judge.js")>("./judge.js")
+	return {
+		...actual,
+		judgeStepVerification: vi.fn(async () => ({ verdict: "fail" as const, reason: "stub" })),
+		judgeJourneyGrade: vi.fn(async () => ({
+			ok: true as const,
+			grade: "A" as const,
+			rationale: "Clean delivery; gates substantiated.",
+		})),
+	}
+})
 import { registerKnowledgeTools } from "./tools/knowledge.js"
 import { registerLifecycleTools } from "./tools/lifecycle.js"
 import { registerPhaseTools } from "./tools/phases.js"
@@ -125,6 +143,30 @@ afterEach(() => {
 	setActive(undefined)
 })
 
+// Gate verdict helpers — return a complete passing set for each scope so the
+// strict assertGateCoverage check passes. Tests that need a "flag" verdict
+// override individual entries inline.
+const passingPlanGates = () => [
+	{ id: "P1", verdict: "pass" as const, rationale: "ok", evidence: "n/a" },
+	{ id: "P2", verdict: "pass" as const, rationale: "ok", evidence: "n/a" },
+	{ id: "P3", verdict: "pass" as const, rationale: "ok", evidence: "n/a" },
+]
+const passingStepGates = () => [
+	{ id: "S1", verdict: "pass" as const, rationale: "ok", evidence: "n/a" },
+	{ id: "S2", verdict: "pass" as const, rationale: "ok", evidence: "n/a" },
+	{ id: "S3", verdict: "pass" as const, rationale: "ok", evidence: "n/a" },
+]
+const passingPhaseGates = () => [
+	{ id: "F1", verdict: "pass" as const, rationale: "ok", evidence: "n/a" },
+	{ id: "F2", verdict: "pass" as const, rationale: "ok", evidence: "n/a" },
+	{ id: "F3", verdict: "pass" as const, rationale: "ok", evidence: "n/a" },
+]
+const passingFermentGates = () => [
+	{ id: "C1", verdict: "pass" as const, rationale: "ok", evidence: "n/a" },
+	{ id: "C2", verdict: "pass" as const, rationale: "ok", evidence: "n/a" },
+	{ id: "C3", verdict: "pass" as const, rationale: "ok", evidence: "n/a" },
+]
+
 // Helper: create a ferment via the tool, then return its id from the harness
 // temp storage used by the registered tool runtime.
 async function createFerment(name: string, description?: string): Promise<string> {
@@ -160,6 +202,7 @@ async function scopeFerment(
 				steps: [{ description: "Step B1" }],
 			},
 		],
+		gates: passingPlanGates(),
 	}
 	const result = await h.call("scope_ferment", params)
 	ok(result)
@@ -250,6 +293,7 @@ describe("scope_ferment", () => {
 			ferment_id: id,
 			goal: "Different goal",
 			phases: [],
+			gates: passingPlanGates(),
 		})
 		expect(err(result)).toMatch(/already planned/i)
 	})
@@ -262,6 +306,7 @@ describe("scope_ferment", () => {
 			ferment_id: id,
 			goal: "X",
 			phases: [],
+			gates: passingPlanGates(),
 		})
 		expect(err(result)).toMatch(/waiting for user confirmation/i)
 	})
@@ -275,6 +320,7 @@ describe("scope_ferment", () => {
 			ferment_id: id,
 			goal: "X",
 			phases: [{ name: "P1", goal: "G", steps: [{ description: "S" }] }],
+			gates: passingPlanGates(),
 		})
 		ok(result)
 		expect(loadFerment(id).status).toBe("planned")
@@ -282,7 +328,12 @@ describe("scope_ferment", () => {
 
 	it("returns error when ferment not found", async () => {
 		markScopingConfirmed("nonexistent")
-		const result = await h.call("scope_ferment", { ferment_id: "nonexistent", goal: "X", phases: [] })
+		const result = await h.call("scope_ferment", {
+			ferment_id: "nonexistent",
+			goal: "X",
+			phases: [],
+			gates: passingPlanGates(),
+		})
 		expect(err(result)).toMatch(/not found/i)
 	})
 
@@ -555,6 +606,7 @@ describe("complete_step", () => {
 				phase_id: "phase-1",
 				step_id: "step-1",
 				summary: "did it",
+				gates: passingStepGates(),
 			}),
 		)
 		expect(loadFerment(id).phases[0].steps[0].status).toBe("done")
@@ -567,10 +619,12 @@ describe("complete_step", () => {
 			phase_id: "phase-1",
 			step_id: "step-1",
 			summary: "summary text",
+			gates: passingStepGates(),
 		})
-		// Summary is graded by judge but with no model registry, judge falls back to "B" with rationale
+		// Step grading no longer happens at complete_step (gates replace grades),
+		// so step.grade is undefined; the summary itself is what we verify here.
 		const step = loadFerment(id).phases[0].steps[0]
-		expect(step.grade?.grade).toBeDefined()
+		expect(step.summary).toBe("summary text")
 	})
 
 	it("rejects when step does not exist", async () => {
@@ -579,6 +633,7 @@ describe("complete_step", () => {
 			ferment_id: id,
 			phase_id: "phase-1",
 			step_id: "step-999",
+			gates: passingStepGates(),
 		})
 		expect(err(result)).toMatch(/not found/i)
 	})
@@ -632,6 +687,7 @@ describe("complete_phase", () => {
 				phase_id: "phase-1",
 				step_id: "step-1",
 				summary: "done",
+				gates: passingStepGates(),
 			}),
 		)
 		ok(await h.call("start_step", { ferment_id: id, phase_id: "phase-1", step_id: "step-2" }))
@@ -641,6 +697,7 @@ describe("complete_phase", () => {
 				phase_id: "phase-1",
 				step_id: "step-2",
 				summary: "done",
+				gates: passingStepGates(),
 			}),
 		)
 		return id
@@ -653,6 +710,7 @@ describe("complete_phase", () => {
 				ferment_id: id,
 				phase_id: "phase-1",
 				summary: "phase done",
+				gates: passingPhaseGates(),
 			}),
 		)
 		const f = loadFerment(id)
@@ -660,16 +718,19 @@ describe("complete_phase", () => {
 		expect(f.phases[0].summary).toBe("phase done")
 	})
 
-	it("assigns a grade to the completed phase", async () => {
+	it("does NOT assign a per-phase grade — grading is now journey-only at complete_ferment", async () => {
 		const id = await setupAllStepsTerminal()
 		ok(
 			await h.call("complete_phase", {
 				ferment_id: id,
 				phase_id: "phase-1",
 				summary: "phase done",
+				gates: passingPhaseGates(),
 			}),
 		)
-		expect(loadFerment(id).phases[0].grade).toBeDefined()
+		// Per-phase grading was removed: the only letter grade lives on
+		// ferment.grade after the journey-grade judge runs at complete_ferment.
+		expect(loadFerment(id).phases[0].grade).toBeUndefined()
 	})
 })
 
@@ -716,7 +777,7 @@ describe("complete_ferment", () => {
 	it("rejects when phases are still planned or active", async () => {
 		const id = await createFerment("Incomplete Test")
 		await scopeFerment(id)
-		const result = await h.call("complete_ferment", { ferment_id: id })
+		const result = await h.call("complete_ferment", { ferment_id: id, gates: passingFermentGates() })
 		expect(err(result)).toMatch(/still active or planned/i)
 	})
 
@@ -728,7 +789,13 @@ describe("complete_ferment", () => {
 		const s = h.storage
 		s.skipPhase(id, "phase-1", "skipped")
 		s.skipPhase(id, "phase-2", "skipped")
-		ok(await h.call("complete_ferment", { ferment_id: id, final_summary: "all done" }))
+		ok(
+			await h.call("complete_ferment", {
+				ferment_id: id,
+				final_summary: "all done",
+				gates: passingFermentGates(),
+			}),
+		)
 		expect(loadFerment(id).status).toBe("complete")
 		expect(getActive()).toBeUndefined()
 		expect(process.env.KIMCHI_ACTIVE_FERMENT).toBeUndefined()
@@ -742,7 +809,7 @@ describe("complete_ferment", () => {
 		s.completePhase(id, "phase-1", "ok")
 		s.setPhaseGrade(id, "phase-1", { grade: "A", rationale: "good", gradedAt: new Date().toISOString() })
 		s.skipPhase(id, "phase-2", "skip")
-		ok(await h.call("complete_ferment", { ferment_id: id }))
+		ok(await h.call("complete_ferment", { ferment_id: id, gates: passingFermentGates() }))
 		expect(loadFerment(id).grade).toBeDefined()
 	})
 })
@@ -767,7 +834,7 @@ describe("active ferment environment", () => {
 		const s = h.storage
 		s.skipPhase(id, "phase-1", "skipped")
 		s.skipPhase(id, "phase-2", "skipped")
-		ok(await h.call("complete_ferment", { ferment_id: id }))
+		ok(await h.call("complete_ferment", { ferment_id: id, gates: passingFermentGates() }))
 
 		const terminal = loadFerment(id)
 		setActive(terminal)
@@ -932,6 +999,7 @@ describe("paused ferment blocks tool calls at the bridge", () => {
 			phase_id: "phase-1",
 			step_id: "step-1",
 			summary: "x",
+			gates: passingStepGates(),
 		})
 		expect(err(result)).toMatch(/paused/i)
 	})
@@ -961,6 +1029,7 @@ describe("propose_phases", () => {
 		const result = await h.call("propose_phases", {
 			ferment_id: id,
 			phases: [{ name: "P1", goal: "g", steps: [{ description: "s" }] }],
+			gates: passingPlanGates(),
 		})
 		expect(err(result)).toMatch(/no pending scope/i)
 	})
@@ -968,7 +1037,11 @@ describe("propose_phases", () => {
 	it("rejects when phases array is empty", async () => {
 		const id = await createFerment("Empty Phases")
 		setPendingScope(id, { goal: "G", successCriteria: "C", constraints: [] })
-		const result = await h.call("propose_phases", { ferment_id: id, phases: [] })
+		const result = await h.call("propose_phases", {
+			ferment_id: id,
+			phases: [],
+			gates: passingPlanGates(),
+		})
 		expect(err(result)).toMatch(/at least one phase/i)
 	})
 
@@ -982,6 +1055,7 @@ describe("propose_phases", () => {
 					{ name: "P1", goal: "g1", steps: [{ description: "s1" }] },
 					{ name: "P2", goal: "g2", steps: [{ description: "s2" }] },
 				],
+				gates: passingPlanGates(),
 			}),
 		)
 		const pending = getPendingScope(id)
@@ -1010,6 +1084,7 @@ describe("propose_phases", () => {
 					{ name: "P1", goal: "g1", steps: [{ description: "s1" }] },
 					{ name: "P2", goal: "g2", steps: [{ description: "s2" }] },
 				],
+				gates: passingPlanGates(),
 			},
 			ctx,
 		)
@@ -1044,6 +1119,7 @@ describe("propose_phases", () => {
 			{
 				ferment_id: id,
 				phases: [{ name: "P1", goal: "g1", steps: [{ description: "s1" }] }],
+				gates: passingPlanGates(),
 			},
 			ctx,
 		)
@@ -1059,6 +1135,7 @@ describe("propose_phases", () => {
 			await h.call("propose_phases", {
 				ferment_id: id,
 				phases: [{ name: "P1", goal: "g", steps: [{ description: "s" }] }],
+				gates: passingPlanGates(),
 			}),
 		)
 		expect(loadFerment(id).status).toBe("draft")
