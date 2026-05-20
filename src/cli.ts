@@ -17,7 +17,7 @@ import {
 } from "./config.js"
 import { isBunBinary } from "./env.js"
 import agentsExtension from "./extensions/agents/index.js"
-import bashCollapseExtension from "./extensions/bash-collapse.js"
+import assistantPrefixExtension from "./extensions/assistant-prefix.js"
 import behavioursExtension from "./extensions/behaviours/index.js"
 import clipboardImageExtension from "./extensions/clipboard-image.js"
 import contextCompactorExtension from "./extensions/context-compactor.js"
@@ -47,8 +47,9 @@ import telemetryExtension from "./extensions/telemetry.js"
 import terminalColorsExtension from "./extensions/terminal-colors.js"
 import { probeKittyKeyboardSupport } from "./extensions/terminal-compat/keyboard-capability.js"
 import { emitTerminalCompatWarning } from "./extensions/terminal-compat/startup-warning.js"
+import thinkingStepsExtension from "./extensions/thinking-steps/index.js"
 import tipsExtension from "./extensions/tips/index.js"
-import toolRendererExtension from "./extensions/tool-renderer.js"
+import toolRenderingExtension from "./extensions/tool-rendering.js"
 import uiExtension from "./extensions/ui.js"
 import webFetchExtension from "./extensions/web-fetch/index.js"
 import webSearchExtension from "./extensions/web-search/index.js"
@@ -302,7 +303,6 @@ try {
 			statsExtension,
 			terminalColorsExtension,
 			kimchiMinimalTintsExtension,
-			bashCollapseExtension,
 			loopGuardExtension,
 			lspExtension,
 			mcpAdapterExtension,
@@ -315,6 +315,8 @@ try {
 			promptSummaryExtension,
 			contextCompactorExtension,
 			hideThinkingExtension,
+			thinkingStepsExtension,
+			assistantPrefixExtension,
 			clipboardImageExtension,
 			uiExtension,
 			sessionModeOnboarding,
@@ -322,7 +324,7 @@ try {
 			agentsExtension,
 			tagsExtension,
 			telemetryExtension(telemetryConfig),
-			toolRendererExtension,
+			toolRenderingExtension,
 			webFetchExtension,
 			webSearchExtension,
 			loginExtension,
