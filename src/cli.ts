@@ -56,6 +56,8 @@ import webFetchExtension from "./extensions/web-fetch/index.js"
 import webSearchExtension from "./extensions/web-search/index.js"
 import { updateModelsConfig } from "./models.js"
 import { injectTraceIdsIntoEntries, injectTraceIdsIntoExport } from "./modes/teleport/sync/session-export.js"
+import { ensureDeviceId } from "./posthog-device.js"
+import { capturePostHogEvent } from "./posthog.js"
 import { runSetupWizard } from "./setup-wizard.js"
 import { setAvailableModels } from "./startup-context.js"
 import { probeTerminalBackground } from "./terminal-bg-probe.js"
@@ -64,7 +66,27 @@ import { getVersion } from "./utils.js"
 
 installCloudflare524RetryPatch()
 
+// --- PostHog device ID & analytics ---
+// Read or generate device ID (persisted; reused across invocations for
+// consistent unique-user counts in PostHog). Reads both camelCase and
+// snake_case (device_id) from config.json for backwards compatibility.
 const telemetryConfig = readTelemetryConfig()
+const deviceId = ensureDeviceId()
+
+// Fire-and-forget app_started on every invocation (respects telemetry opt-out).
+// Stash the promise so we can await it on shutdown to reduce truncated sends.
+// app_started has no per-event properties — default properties (cli_version,
+// os, arch) are attached automatically by capturePostHogEvent, matching the
+// DefaultEventProperties behaviour.
+const phPending: Promise<void>[] = []
+if (telemetryConfig.enabled) {
+	phPending.push(
+		capturePostHogEvent({
+			event: "app_started",
+			distinctId: deviceId,
+		}),
+	)
+}
 
 let sessionId: string | undefined
 let sessionFile: string | undefined
@@ -213,6 +235,7 @@ try {
 	// the version using piConfig.name = "kimchi".
 	const dispatch = await dispatchSubcommand(process.argv.slice(2))
 	if (dispatch.kind === "handled") {
+		await Promise.allSettled(phPending)
 		process.exit(dispatch.exitCode)
 	}
 
@@ -225,6 +248,18 @@ try {
 		// hook keys off this flag instead of just running unconditionally on a
 		// 0-status exit.
 		sessionStarted = true
+
+		// Fire harness_launched (one shot per harness session; respects telemetry opt-out)
+		if (telemetryConfig.enabled) {
+			phPending.push(
+				capturePostHogEvent({
+					event: "harness_launched",
+					distinctId: deviceId,
+					properties: { version: getVersion() },
+				}),
+			)
+		}
+
 		let config = loadConfig()
 
 		const envKey = process.env.KIMCHI_API_KEY || undefined
@@ -438,6 +473,7 @@ try {
 		} else if (teleportMode) {
 			if (!apiKey) {
 				console.error("Error: --teleport requires an API key — run 'kimchi setup' first.")
+				await Promise.allSettled(phPending)
 				process.exit(1)
 			}
 
@@ -454,11 +490,15 @@ try {
 			await main(rawArgs, { extensionFactories })
 		}
 	}
+	// Await pending PostHog sends before exiting to reduce truncated requests.
+	await Promise.allSettled(phPending)
 } catch (err) {
+	await Promise.allSettled(phPending)
 	if (err instanceof SetupCancelled) {
 		process.exitCode = 130
 	} else {
 		console.error(err instanceof Error ? err.message : String(err))
+		await Promise.allSettled(phPending)
 		process.exit(1)
 	}
 }
