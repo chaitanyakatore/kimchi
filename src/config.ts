@@ -123,6 +123,8 @@ export interface KimchiConfig {
 	apiKey: string
 	agentConfigDir: string
 	llmEndpoint: string
+	/** The user-configured endpoint, undefined if not explicitly set. Use this when passing to updateModelsConfig. */
+	customLlmEndpoint: string | undefined
 	maxToolResultChars: number
 	mcpSearchLimit: number
 	mcpSearch: SearchStrategyConfig
@@ -394,6 +396,7 @@ export function loadConfig(options?: { configPath?: string; cwd?: string }): Kim
 		apiKey: extras.apiKey ?? "",
 		agentConfigDir: AGENT_CONFIG_DIR,
 		llmEndpoint: extras.llmEndpoint ?? CAST_AI_LLM_ENDPOINT,
+		customLlmEndpoint: extras.llmEndpoint,
 		maxToolResultChars: extras.maxToolResultChars ?? 10_000,
 		mcpSearchLimit: extras.mcpSearchLimit ?? 5,
 		mcpSearch: { ...SEARCH_STRATEGY_DEFAULTS, ...extras.mcpSearch },
@@ -544,10 +547,21 @@ export function writeSkillPaths(paths: string[], configPath?: string): void {
 	writeConfigField("skillPaths", paths, configPath ?? KIMCHI_CONFIG_PATH)
 }
 
-export function writeApiKey(key: string, configPath?: string): void {
+export interface WriteApiKeyOptions {
+	llmEndpoint?: string
+}
+
+export function writeApiKey(key: string, configPath?: string, options: WriteApiKeyOptions = {}): void {
 	const path = configPath ?? KIMCHI_CONFIG_PATH
 	updateConfigFile(path, (raw) => {
 		raw.apiKey = key
+		const llmEndpoint = options.llmEndpoint?.trim()
+		if (llmEndpoint) {
+			raw.llmEndpoint = llmEndpoint
+		} else {
+			// biome-ignore lint/performance/noDelete: explicit removal is clearer than relying on JSON.stringify to silently drop undefined values
+			delete raw.llmEndpoint
+		}
 		// Clear legacy snake_case key so we don't keep stale data
 		// biome-ignore lint/performance/noDelete: explicit removal is clearer than relying on JSON.stringify to silently drop undefined values
 		delete raw.api_key

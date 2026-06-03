@@ -131,6 +131,19 @@ describe("loadConfig", () => {
 		rmSync(projectDir, { recursive: true, force: true })
 	})
 
+	it("customLlmEndpoint is undefined when no endpoint is saved", () => {
+		writeFileSync(configPath, JSON.stringify({ apiKey: "my-key" }))
+		const config = loadConfig({ configPath })
+		expect(config.customLlmEndpoint).toBeUndefined()
+	})
+
+	it("customLlmEndpoint returns the saved value when explicitly configured", () => {
+		writeFileSync(configPath, JSON.stringify({ apiKey: "my-key", llmEndpoint: "https://custom.example" }))
+		const config = loadConfig({ configPath })
+		expect(config.customLlmEndpoint).toBe("https://custom.example")
+		expect(config.llmEndpoint).toBe("https://custom.example")
+	})
+
 	it("project llmEndpoint overrides global", () => {
 		const globalDir = mkdtempSync(join(tmpdir(), "kimchi-test-"))
 		const projectDir = mkdtempSync(join(tmpdir(), "kimchi-test-"))
@@ -281,6 +294,21 @@ describe("writeApiKey", () => {
 		writeApiKey("second", configPath)
 		const raw = readFileSync(configPath, "utf-8")
 		expect(JSON.parse(raw).apiKey).toBe("second")
+	})
+
+	it("can persist the Kimchi API endpoint with the API key", () => {
+		writeApiKey("sekrit-42", configPath, { llmEndpoint: " https://custom.kimchi.example " })
+		const raw = JSON.parse(readFileSync(configPath, "utf-8"))
+		expect(raw.apiKey).toBe("sekrit-42")
+		expect(raw.llmEndpoint).toBe("https://custom.kimchi.example")
+	})
+
+	it("clears llmEndpoint when no endpoint is provided (prevents stale endpoint after browser login)", () => {
+		writeFileSync(configPath, JSON.stringify({ apiKey: "old-key", llmEndpoint: "https://custom.example" }))
+		writeApiKey("new-browser-token", configPath)
+		const raw = JSON.parse(readFileSync(configPath, "utf-8"))
+		expect(raw.apiKey).toBe("new-browser-token")
+		expect(raw.llmEndpoint).toBeUndefined()
 	})
 })
 

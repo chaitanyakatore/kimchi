@@ -268,7 +268,7 @@ try {
 		let currentApiKey = apiKey
 		let models: Awaited<ReturnType<typeof updateModelsConfig>>["models"]
 		try {
-			;({ models } = await updateModelsConfig(modelsJsonPath, currentApiKey))
+			;({ models } = await updateModelsConfig(modelsJsonPath, currentApiKey, { endpoint: config.customLlmEndpoint }))
 			if (experimentalFeatures) {
 				injectExperimentalProvider(modelsJsonPath, currentApiKey ?? "")
 				models = [...models, ...readExperimentalModels(modelsJsonPath)]
@@ -288,7 +288,7 @@ try {
 				currentApiKey = wizardResult.apiKey ?? ""
 				writeApiKey(currentApiKey)
 				config = loadConfig()
-				;({ models } = await updateModelsConfig(modelsJsonPath, currentApiKey))
+				;({ models } = await updateModelsConfig(modelsJsonPath, currentApiKey, { endpoint: config.customLlmEndpoint }))
 				if (experimentalFeatures) {
 					injectExperimentalProvider(modelsJsonPath, currentApiKey)
 					models = [...models, ...readExperimentalModels(modelsJsonPath)]
