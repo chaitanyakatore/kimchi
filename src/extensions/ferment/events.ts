@@ -21,7 +21,7 @@ import { loadFermentSilently, resumeFerment } from "./resume.js"
 import { type FermentRuntime, defaultFermentRuntime } from "./runtime.js"
 import { scheduleFermentWakeUp } from "./scheduler.js"
 import { confirmPendingScope } from "./scoping-confirmation.js"
-import { clearActiveFermentId, getActiveFermentId, isRestoringModel, setRestoringModel } from "./state.js"
+import { clearActiveFermentId, getActiveFermentId } from "./state.js"
 import { createApplyAndPersist } from "./tool-helpers.js"
 import {
 	applyFermentRuntimeToolProfile,
@@ -394,24 +394,8 @@ export function registerFermentEvents(pi: ExtensionAPI, runtime: FermentRuntime 
 		return {}
 	})
 
-	pi.on("model_select", async (event, ctx) => {
-		runtime.captureJudgeContext(ctx?.model, ctx?.modelRegistry)
-		const f = runtime.getActive()
-		if (!f || f.status !== "running") return
-		if (isRestoringModel()) return
-
-		if (event.previousModel) {
-			setRestoringModel(true)
-			pi.setModel(event.previousModel)
-				.catch(() => {})
-				.finally(() => {
-					setRestoringModel(false)
-				})
-		}
-		ctx.ui.notify(
-			`Model switching is locked while ferment "${f.name}" is running. Finish or abandon the ferment first.`,
-			"warning",
-		)
+	pi.on("model_select", (event, ctx) => {
+		runtime.captureJudgeContext(event.model, ctx?.modelRegistry)
 	})
 
 	pi.on("turn_end", async (event, ctx) => {
