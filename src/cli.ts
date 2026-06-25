@@ -36,6 +36,7 @@ import behavioursExtension from "./extensions/behaviours/index.js"
 import claudeCodeHooksAdapter from "./extensions/claude-code-hook-adapter/index.js"
 import claudeCodeSkillsExtension from "./extensions/claude-code-skills/index.js"
 import clipboardImageExtension from "./extensions/clipboard-image.js"
+import customizeFooterExtension from "./extensions/customize-footer-command.js"
 import explorationGuardExtension from "./extensions/exploration-guard.js"
 import fermentExtension from "./extensions/ferment/index.js"
 import helpExtension from "./extensions/help.js"
@@ -503,6 +504,7 @@ try {
 			] satisfies ManagedExtensionFactory[]),
 			helpExtension,
 			themeSelectorExtension,
+			customizeFooterExtension,
 			inputHistoryExtension,
 			reportBugExtension,
 			tagsExtension,
